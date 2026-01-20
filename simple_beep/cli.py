@@ -340,6 +340,15 @@ def _play_sequence(config: Config, logger: logging.Logger) -> int:
         logger.warning("Backend '%s' does not support device selection", backend.name)
 
     with backend.get_stream(spec, config.device) as stream:
+        # `simpleaudio` doesn't provide a true gapless streaming API; each call to
+        # `play_buffer()` has non-trivial startup overhead, which shows up as
+        # extra delay/jitter between notes if we `.write()` multiple chunks.
+        #
+        # For non-interactive playback, concatenate into one contiguous buffer
+        # and play it in a single call to restore timing.
+        if backend.name == "simpleaudio" and config.input_index is None:
+            stream.write(b"".join(tone.sequence_pcm(spec) for tone in config.tones))
+            return 0
 
         def play_note(tone: Tone) -> None:
             stream.write(tone.sequence_pcm(spec))
