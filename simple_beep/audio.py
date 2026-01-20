@@ -9,7 +9,8 @@ import sys
 import wave
 from array import array
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, Protocol
+
 
 SAMPLE_RATE = 44100
 SAMPLE_WIDTH = 2  # bytes
@@ -19,6 +20,82 @@ AMPLITUDE = 0.6
 
 class AudioError(RuntimeError):
     """Raised when audio output fails."""
+
+
+class AudioStream(Protocol):
+    def write(self, pcm_bytes: bytes) -> None:
+        ...
+
+    def __enter__(self) -> AudioStream:
+        ...
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        ...
+
+
+class SubprocessStream(AudioStream):
+    def __init__(self, cmd: list[str]) -> None:
+        self.cmd = cmd
+        self._proc: Optional[subprocess.Popen[bytes]] = None
+
+    def __enter__(self) -> AudioStream:
+        try:
+            self._proc = subprocess.Popen(
+                self.cmd,
+                stdin=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            raise AudioError(f"Audio backend missing: {self.cmd[0]}") from exc
+        return self
+
+    def write(self, pcm_bytes: bytes) -> None:
+        if self._proc is None or self._proc.stdin is None:
+            raise AudioError("Stream is not open")
+        try:
+            self._proc.stdin.write(pcm_bytes)
+            self._proc.stdin.flush()
+        except (BrokenPipeError, OSError) as exc:
+            _, stderr = self._proc.communicate()
+            raise AudioError(
+                f"Audio backend failed: {self.cmd[0]}\n{stderr.decode().strip()}"
+            ) from exc
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if self._proc:
+            if self._proc.stdin:
+                self._proc.stdin.close()
+            self._proc.wait()
+            self._proc = None
+
+
+class SimpleAudioStream(AudioStream):
+    def __init__(self, spec: AudioSpec) -> None:
+        self.spec = spec
+        self._sa: Any = None
+
+    def __enter__(self) -> AudioStream:
+        try:
+            import simpleaudio as sa
+
+            self._sa = sa
+        except ImportError as exc:
+            raise AudioError("simpleaudio is not installed") from exc
+        return self
+
+    def write(self, pcm_bytes: bytes) -> None:
+        if self._sa is None:
+            raise AudioError("simpleaudio is not initialized")
+        play_obj = self._sa.play_buffer(
+            pcm_bytes,
+            self.spec.channels,
+            self.spec.sample_width,
+            self.spec.sample_rate,
+        )
+        play_obj.wait_done()
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        pass
 
 
 @dataclass(frozen=True)
@@ -102,10 +179,31 @@ def build_sequence_pcm(
 @dataclass
 class Backend:
     name: str
-    input_format: str
     supports_device: bool
     available: Callable[[], bool]
-    play: Callable[[bytes, bytes, AudioSpec, Optional[str]], None]
+    get_stream: Callable[[AudioSpec, Optional[str]], AudioStream]
+
+    def play(
+        self, wav_bytes: bytes, pcm_bytes: bytes, spec: AudioSpec, device: Optional[str]
+    ) -> None:
+        with self.get_stream(spec, device) as stream:
+            stream.write(pcm_bytes)
+
+
+def _aplay_available() -> bool:
+    return shutil.which("aplay") is not None
+
+
+def _paplay_available() -> bool:
+    return shutil.which("paplay") is not None
+
+
+def _play_available() -> bool:
+    return shutil.which("play") is not None
+
+
+def _ffplay_available() -> bool:
+    return shutil.which("ffplay") is not None
 
 
 def _simpleaudio_available() -> bool:
@@ -116,50 +214,30 @@ def _simpleaudio_available() -> bool:
     return True
 
 
-def _simpleaudio_play(
-    wav_bytes: bytes, pcm_bytes: bytes, spec: AudioSpec, device: Optional[str]
-) -> None:
-    try:
-        import simpleaudio as sa
-    except Exception as exc:
-        raise AudioError("simpleaudio is not available") from exc
-    if device:
-        # simpleaudio does not support device selection.
-        pass
-    play_obj = sa.play_buffer(pcm_bytes, spec.channels, spec.sample_width, spec.sample_rate)
-    play_obj.wait_done()
+def _simpleaudio_stream(spec: AudioSpec, device: Optional[str]) -> AudioStream:
+    return SimpleAudioStream(spec)
 
 
-def _subprocess_play(cmd: list[str], data: bytes) -> None:
-    try:
-        subprocess.run(cmd, input=data, check=True)
-    except subprocess.CalledProcessError as exc:
-        raise AudioError(f"Audio backend failed: {' '.join(cmd)}") from exc
-    except FileNotFoundError as exc:
-        raise AudioError(f"Audio backend missing: {' '.join(cmd)}") from exc
-
-
-def _aplay_available() -> bool:
-    return shutil.which("aplay") is not None
-
-
-def _aplay_play(
-    wav_bytes: bytes, pcm_bytes: bytes, spec: AudioSpec, device: Optional[str]
-) -> None:
-    cmd = ["aplay", "-q"]
+def _aplay_stream(spec: AudioSpec, device: Optional[str]) -> AudioStream:
+    cmd = [
+        "aplay",
+        "-q",
+        "-t",
+        "raw",
+        f"-f",
+        "S16_LE",
+        "-c",
+        str(spec.channels),
+        "-r",
+        str(spec.sample_rate),
+    ]
     if device:
         cmd.extend(["-D", device])
-    cmd.extend(["-t", "wav", "-"])
-    _subprocess_play(cmd, wav_bytes)
+    cmd.append("-")
+    return SubprocessStream(cmd)
 
 
-def _paplay_available() -> bool:
-    return shutil.which("paplay") is not None
-
-
-def _paplay_play(
-    wav_bytes: bytes, pcm_bytes: bytes, spec: AudioSpec, device: Optional[str]
-) -> None:
+def _paplay_stream(spec: AudioSpec, device: Optional[str]) -> AudioStream:
     cmd = [
         "paplay",
         "--raw",
@@ -169,66 +247,77 @@ def _paplay_play(
     ]
     if device:
         cmd.extend(["--device", device])
-    _subprocess_play(cmd, pcm_bytes)
+    return SubprocessStream(cmd)
 
 
-def _play_available() -> bool:
-    return shutil.which("play") is not None
+def _play_stream(spec: AudioSpec, device: Optional[str]) -> AudioStream:
+    cmd = [
+        "play",
+        "-q",
+        "-t",
+        "raw",
+        "-e",
+        "signed-integer",
+        "-b",
+        "16",
+        "-c",
+        str(spec.channels),
+        "-r",
+        str(spec.sample_rate),
+        "-",
+    ]
+    return SubprocessStream(cmd)
 
 
-def _play_play(
-    wav_bytes: bytes, pcm_bytes: bytes, spec: AudioSpec, device: Optional[str]
-) -> None:
-    cmd = ["play", "-q", "-t", "wav", "-"]
-    _subprocess_play(cmd, wav_bytes)
-
-
-def _ffplay_available() -> bool:
-    return shutil.which("ffplay") is not None
-
-
-def _ffplay_play(
-    wav_bytes: bytes, pcm_bytes: bytes, spec: AudioSpec, device: Optional[str]
-) -> None:
-    cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-i", "-"]
-    _subprocess_play(cmd, wav_bytes)
+def _ffplay_stream(spec: AudioSpec, device: Optional[str]) -> AudioStream:
+    cmd = [
+        "ffplay",
+        "-nodisp",
+        "-autoexit",
+        "-loglevel",
+        "quiet",
+        "-f",
+        "s16le",
+        "-ac",
+        str(spec.channels),
+        "-ar",
+        str(spec.sample_rate),
+        "-i",
+        "-",
+    ]
+    return SubprocessStream(cmd)
 
 
 BACKENDS = [
     Backend(
         name="aplay",
-        input_format="wav",
         supports_device=True,
         available=_aplay_available,
-        play=_aplay_play,
+        get_stream=_aplay_stream,
     ),
     Backend(
         name="paplay",
-        input_format="pcm",
         supports_device=True,
         available=_paplay_available,
-        play=_paplay_play,
+        get_stream=_paplay_stream,
     ),
     Backend(
         name="play",
-        input_format="wav",
         supports_device=False,
         available=_play_available,
-        play=_play_play,
+        get_stream=_play_stream,
     ),
     Backend(
         name="ffplay",
-        input_format="wav",
         supports_device=False,
         available=_ffplay_available,
-        play=_ffplay_play,
+        get_stream=_ffplay_stream,
     ),
     Backend(
         name="simpleaudio",
-        input_format="pcm",
         supports_device=False,
         available=_simpleaudio_available,
-        play=_simpleaudio_play,
+        get_stream=_simpleaudio_stream,
     ),
 ]
 

@@ -339,32 +339,26 @@ def _play_sequence(config: Config, logger: logging.Logger) -> int:
     if config.device and not backend.supports_device:
         logger.warning("Backend '%s' does not support device selection", backend.name)
 
-    if backend.name == "simpleaudio" and config.input_index is None:
-        combined_pcm = b"".join(tone.sequence_pcm(spec) for tone in config.tones)
-        backend.play(b"", combined_pcm, spec, config.device)
-        return 0
+    with backend.get_stream(spec, config.device) as stream:
 
-    def play_note(tone: Tone) -> None:
-        if backend.input_format == "pcm":
-            backend.play(b"", tone.sequence_pcm(spec), spec, config.device)
-        else:
-            backend.play(tone.sequence_wav(spec), b"", spec, config.device)
+        def play_note(tone: Tone) -> None:
+            stream.write(tone.sequence_pcm(spec))
 
-    if config.input_index is None:
-        for tone in config.tones:
+        if config.input_index is None:
+            for tone in config.tones:
+                play_note(tone)
+            return 0
+
+        for idx, tone in enumerate(config.tones):
+            if idx < config.input_index:
+                play_note(tone)
+                continue
+
+            if idx == config.input_index:
+                _process_input(tone, play_note)
+                continue
+
             play_note(tone)
-        return 0
-
-    for idx, tone in enumerate(config.tones):
-        if idx < config.input_index:
-            play_note(tone)
-            continue
-
-        if idx == config.input_index:
-            _process_input(tone, play_note)
-            continue
-
-        play_note(tone)
 
     return 0
 
