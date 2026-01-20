@@ -197,6 +197,9 @@ def parse_args(argv: List[str]) -> Tuple[Optional[Config], Optional[int]]:
     log_level = _log_level_from_env() or logging.WARNING
 
     index = 0
+    freq_set = False
+    length_set = False
+
     while index < len(argv):
         arg = argv[index]
 
@@ -206,6 +209,7 @@ def parse_args(argv: List[str]) -> Tuple[Optional[Config], Optional[int]]:
 
         if arg in ("-v", "-V", "--version"):
             print(f"simple-beep {__version__}")
+            print(f"Python {sys.version.split()[0]}")
             return None, 0
 
         if arg in ("--debug", "--verbose"):
@@ -227,6 +231,8 @@ def parse_args(argv: List[str]) -> Tuple[Optional[Config], Optional[int]]:
         if arg in ("-n", "--new"):
             current = Tone()
             tones.append(current)
+            freq_set = False
+            length_set = False
             index += 1
             continue
 
@@ -245,7 +251,13 @@ def parse_args(argv: List[str]) -> Tuple[Optional[Config], Optional[int]]:
         if value is not None or arg == "-f":
             if value is None:
                 value, index = _consume_value(argv, index, "-f")
+            if freq_set:
+                print(
+                    "beep: Warning: multiple -f options given, only the last one will be used",
+                    file=sys.stderr,
+                )
             current.frequency = _parse_frequency(value)
+            freq_set = True
             index += 1
             continue
 
@@ -253,7 +265,13 @@ def parse_args(argv: List[str]) -> Tuple[Optional[Config], Optional[int]]:
         if value is not None or arg == "-l":
             if value is None:
                 value, index = _consume_value(argv, index, "-l")
+            if length_set:
+                print(
+                    "beep: Warning: multiple -l options given, only the last one will be used",
+                    file=sys.stderr,
+                )
             current.length_ms = _parse_length(value)
+            length_set = True
             index += 1
             continue
 
@@ -413,6 +431,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if exit_code is not None:
         return exit_code
 
+    assert config is not None
     logger = _configure_logger(config.log_level)
 
     try:
