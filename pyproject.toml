@@ -11,6 +11,9 @@ dependencies = []
 simpleaudio = [
     "simpleaudio-patched>=1.0.5",
 ]
+sounddevice = [
+    "sounddevice>=0.4.6",
+]
 
 [project.scripts]
 beep = "simple_beep.cli:main"

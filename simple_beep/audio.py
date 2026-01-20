@@ -101,6 +101,62 @@ class SimpleAudioStream(AudioStream):
         pass
 
 
+class SoundDeviceStream(AudioStream):
+    def __init__(self, spec: AudioSpec, device: Optional[str]) -> None:
+        self.spec = spec
+        self.device = device
+        self._sd: Any = None
+        self._stream: Any = None
+        self._total_samples = 0
+
+    def __enter__(self) -> AudioStream:
+        try:
+            import sounddevice as sd
+
+            self._sd = sd
+            self._stream = sd.RawOutputStream(
+                samplerate=self.spec.sample_rate,
+                channels=self.spec.channels,
+                dtype="int16",
+                device=self.device,
+            )
+            self._stream.start()
+            self._start_time = self._stream.time
+            self._total_samples = 0
+        except ImportError as exc:
+            raise AudioError("sounddevice is not installed") from exc
+        except Exception as exc:
+            raise AudioError(f"sounddevice failed to open: {exc}") from exc
+        return self
+
+    def write(self, pcm_bytes: bytes) -> None:
+        if self._stream is None:
+            raise AudioError("sounddevice stream is not open")
+        try:
+            self._stream.write(pcm_bytes)
+            self._total_samples += len(pcm_bytes) // (
+                self.spec.sample_width * self.spec.channels
+            )
+        except Exception as exc:
+            raise AudioError(f"sounddevice write failed: {exc}") from exc
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if self._stream is not None:
+            try:
+                # Wait for playback to finish. RawOutputStream.write() blocks until
+                # data is in the buffer, but not until it's played.
+                import time
+
+                end_time = self._start_time + self._total_samples / self.spec.sample_rate
+                while self._stream.time < end_time:
+                    time.sleep(0.005)
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
+
+
 @dataclass(frozen=True)
 class AudioSpec:
     sample_rate: int = SAMPLE_RATE
@@ -289,8 +345,20 @@ def _simpleaudio_available() -> bool:
     return True
 
 
+def _sounddevice_available() -> bool:
+    try:
+        import sounddevice  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
 def _simpleaudio_stream(spec: AudioSpec, device: Optional[str]) -> AudioStream:
     return SimpleAudioStream(spec)
+
+
+def _sounddevice_stream(spec: AudioSpec, device: Optional[str]) -> AudioStream:
+    return SoundDeviceStream(spec, device)
 
 
 def _aplay_stream(spec: AudioSpec, device: Optional[str]) -> AudioStream:
@@ -393,6 +461,12 @@ BACKENDS = [
         supports_device=False,
         available=_simpleaudio_available,
         get_stream=_simpleaudio_stream,
+    ),
+    Backend(
+        name="sounddevice",
+        supports_device=True,
+        available=_sounddevice_available,
+        get_stream=_sounddevice_stream,
     ),
 ]
 

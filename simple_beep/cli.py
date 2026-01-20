@@ -56,7 +56,7 @@ Environment:
 
 Notes:
   DEVICE may be specified as BACKEND or BACKEND:DEVICE. Available backends are
-  auto-selected from: aplay, paplay, play, ffplay, simpleaudio.
+  auto-selected from: aplay, paplay, play, ffplay, simpleaudio, sounddevice.
   Use BACKEND=wav to write output to a WAV file (e.g. -e wav:beep.wav).
 """
 
@@ -195,7 +195,15 @@ def _consume_value(args: List[str], index: int, opt: str) -> Tuple[str, int]:
 def _parse_device_hint(device: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
     if not device:
         return None, None
-    backends = {"simpleaudio", "aplay", "paplay", "play", "ffplay", "wav"}
+    backends = {
+        "simpleaudio",
+        "sounddevice",
+        "aplay",
+        "paplay",
+        "play",
+        "ffplay",
+        "wav",
+    }
     if device in backends:
         return device, None
     if ":" not in device:
@@ -395,7 +403,10 @@ def _play_sequence(config: Config, logger: logging.Logger) -> int:
         #
         # For non-interactive playback, concatenate into one contiguous buffer
         # and play it in a single call to restore timing.
-        if backend.name == "simpleaudio" and config.input_index is None:
+        if (
+            backend.name in ("simpleaudio", "sounddevice")
+            and config.input_index is None
+        ):
             stream.write(b"".join(tone.sequence_pcm(spec) for tone in config.tones))
             return 0
 
