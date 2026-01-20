@@ -1,0 +1,17 @@
+[project]
+name = "simple-beep"
+version = "0.1.0"
+description = "Beep(1) compatible square-wave audio output"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Unlicensed" }
+dependencies = [
+    "simpleaudio>=1.0.4",
+]
+
+[project.scripts]
+beep = "simple_beep.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"

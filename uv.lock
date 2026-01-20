@@ -1,0 +1,25 @@
+version = 1
+revision = 2
+requires-python = ">=3.8"
+
+[[package]]
+name = "simple-beep"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "simpleaudio" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "simpleaudio", specifier = ">=1.0.4" }]
+
+[[package]]
+name = "simpleaudio"
+version = "1.0.4"
+source = { registry = "https://mirrors.ustc.edu.cn/pypi/simple" }
+sdist = { url = "https://mirrors.ustc.edu.cn/pypi/packages/94/1b/4dc29653733202b68c09d9c6ca085cf67ac54859ee860647ef21ac1ff3dc/simpleaudio-1.0.4.tar.gz", hash = "sha256:691c88649243544db717e7edf6a9831df112104e1aefb5f6038a5d071e8cf41d", size = 2042564, upload-time = "2019-11-29T03:56:28.965Z" }
+wheels = [
+    { url = "https://mirrors.ustc.edu.cn/pypi/packages/89/bf/4863de39b98119d2dfa0e1b1952bbc26f0611f599ecd742657b9140eb8b3/simpleaudio-1.0.4-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:f68820297ad51577e3a77369e7e9b23989d30d5ae923bf34c92cf983c04ade04", size = 2036400, upload-time = "2019-11-29T03:57:19.157Z" },
+    { url = "https://mirrors.ustc.edu.cn/pypi/packages/c4/d7/a008750ec0133dd7cfe80c582f0f39ced31b9fc4cdd3e4875257e347af3a/simpleaudio-1.0.4-cp38-cp38-win32.whl", hash = "sha256:67348e3d3ccbae73bd126beed7f1e242976889620dbc6974c36800cd286430fc", size = 2038822, upload-time = "2019-11-29T03:55:55.745Z" },
+    { url = "https://mirrors.ustc.edu.cn/pypi/packages/f8/f0/baa21582912d8e9734635ec5b74d03a56730997da371205bab353ec954c7/simpleaudio-1.0.4-cp38-cp38-win_amd64.whl", hash = "sha256:f346a4eac9cdbb1b3f3d0995095b7e86c12219964c022f4d920c22f6ca05fb4c", size = 2039647, upload-time = "2019-11-29T03:56:55.954Z" },
+]
