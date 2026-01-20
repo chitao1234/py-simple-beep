@@ -4,14 +4,17 @@ requires-python = ">=3.8"
 
 [[package]]
 name = "simple-beep"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
-dependencies = [
+
+[package.optional-dependencies]
+simpleaudio = [
     { name = "simpleaudio-patched" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "simpleaudio-patched", specifier = ">=1.0.5" }]
+requires-dist = [{ name = "simpleaudio-patched", marker = "extra == 'simpleaudio'", specifier = ">=1.0.5" }]
+provides-extras = ["simpleaudio"]
 
 [[package]]
 name = "simpleaudio-patched"

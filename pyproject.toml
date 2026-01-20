@@ -5,7 +5,10 @@ description = "Beep(1) compatible multi-wave audio output"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "Unlicensed" }
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+simpleaudio = [
     "simpleaudio-patched>=1.0.5",
 ]
 
