@@ -27,7 +27,7 @@ The command auto-selects the first available backend in this order:
 2. `paplay` (PulseAudio)
 3. `play` (SoX)
 4. `ffplay` (FFmpeg)
-5. `simpleaudio` (Python package)
+5. `simpleaudio-patched` (Python package)
 
 Install any one of these if you do not already have one.
 

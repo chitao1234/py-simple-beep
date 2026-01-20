@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "Unlicensed" }
 dependencies = [
-    "simpleaudio>=1.0.4",
+    "simpleaudio-patched>=1.0.5",
 ]
 
 [project.scripts]
