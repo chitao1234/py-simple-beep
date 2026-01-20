@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import io
+import math
 import shutil
 import subprocess
 import sys
 import wave
 from array import array
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Protocol
+from typing import Any, Callable, Literal, Optional, Protocol
 
 
 SAMPLE_RATE = 44100
 SAMPLE_WIDTH = 2  # bytes
 CHANNELS = 1
 AMPLITUDE = 0.6
+
+WaveType = Literal["sine", "square", "sawtooth", "triangle"]
 
 
 class AudioError(RuntimeError):
@@ -113,6 +116,69 @@ class WaveData:
     spec: AudioSpec
 
 
+def sine_wave_pcm(freq_hz: int, length_ms: int, spec: AudioSpec) -> bytes:
+    if length_ms <= 0:
+        return b""
+    num_samples = int(round(spec.sample_rate * (length_ms / 1000.0)))
+    if num_samples <= 0:
+        return b""
+    max_amp = int(32767 * spec.amplitude)
+    samples = array("h")
+    factor = 2 * math.pi * freq_hz / spec.sample_rate
+    for i in range(num_samples):
+        samples.append(int(round(max_amp * math.sin(factor * i))))
+    if sys.byteorder != "little":
+        samples.byteswap()
+    return samples.tobytes()
+
+
+def sawtooth_wave_pcm(freq_hz: int, length_ms: int, spec: AudioSpec) -> bytes:
+    if length_ms <= 0:
+        return b""
+    num_samples = int(round(spec.sample_rate * (length_ms / 1000.0)))
+    if num_samples <= 0:
+        return b""
+    max_amp = int(32767 * spec.amplitude)
+    samples = array("h")
+    phase = 0.0
+    step = freq_hz / spec.sample_rate
+    for _ in range(num_samples):
+        # Sawtooth from -max_amp to max_amp
+        samples.append(int(round(max_amp * (2.0 * phase - 1.0))))
+        phase += step
+        if phase >= 1.0:
+            phase -= int(phase)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    return samples.tobytes()
+
+
+def triangle_wave_pcm(freq_hz: int, length_ms: int, spec: AudioSpec) -> bytes:
+    if length_ms <= 0:
+        return b""
+    num_samples = int(round(spec.sample_rate * (length_ms / 1000.0)))
+    if num_samples <= 0:
+        return b""
+    max_amp = int(32767 * spec.amplitude)
+    samples = array("h")
+    phase = 0.0
+    step = freq_hz / spec.sample_rate
+    for _ in range(num_samples):
+        if phase < 0.25:
+            val = 4.0 * phase
+        elif phase < 0.75:
+            val = 2.0 - 4.0 * phase
+        else:
+            val = 4.0 * phase - 4.0
+        samples.append(int(round(max_amp * val)))
+        phase += step
+        if phase >= 1.0:
+            phase -= int(phase)
+    if sys.byteorder != "little":
+        samples.byteswap()
+    return samples.tobytes()
+
+
 def square_wave_pcm(freq_hz: int, length_ms: int, spec: AudioSpec) -> bytes:
     if length_ms <= 0:
         return b""
@@ -159,8 +225,17 @@ def build_sequence_pcm(
     delay_ms: int,
     delay_mode: str,
     spec: AudioSpec,
+    wave_type: WaveType = "square",
 ) -> bytes:
-    tone_pcm = square_wave_pcm(freq_hz, length_ms, spec)
+    if wave_type == "sine":
+        tone_pcm = sine_wave_pcm(freq_hz, length_ms, spec)
+    elif wave_type == "sawtooth":
+        tone_pcm = sawtooth_wave_pcm(freq_hz, length_ms, spec)
+    elif wave_type == "triangle":
+        tone_pcm = triangle_wave_pcm(freq_hz, length_ms, spec)
+    else:
+        tone_pcm = square_wave_pcm(freq_hz, length_ms, spec)
+
     if repeats <= 1:
         if delay_mode == "after" and delay_ms > 0:
             return tone_pcm + silence_pcm(delay_ms, spec)

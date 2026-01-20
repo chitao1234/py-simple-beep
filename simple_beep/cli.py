@@ -11,19 +11,27 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from . import __version__
-from .audio import AudioError, AudioSpec, build_sequence_pcm, pcm_to_wav, select_backend
+from .audio import (
+    AudioError,
+    AudioSpec,
+    WaveType,
+    build_sequence_pcm,
+    pcm_to_wav,
+    select_backend,
+)
 
 DEFAULT_FREQ = 440
 DEFAULT_LENGTH_MS = 200
 DEFAULT_REPEATS = 1
 DEFAULT_DELAY_MS = 100
 DEFAULT_DELAY_MODE = "between"  # "between" or "after"
+DEFAULT_WAVE: WaveType = "square"
 
 HELP_TEXT = """
-beep - beep with a square wave (beep-compatible)
+beep - beep with multiple wave types (beep-compatible)
 
 Usage:
-  beep [GLOBALS] [-f FREQ] [-l LEN] [-r REPEATS] [<-d|-D> DELAY] [-s] [-c]
+  beep [GLOBALS] [-f FREQ] [-l LEN] [-r REPEATS] [<-d|-D> DELAY] [-w WAVE] [-s] [-c]
   beep [GLOBALS] <TONE_OPTIONS> [-n|--new] <TONE_OPTIONS>
   beep <-h|--help>
   beep <-v|-V|--version>
@@ -38,6 +46,7 @@ Tone options:
   -r REPEATS  Repeat the tone including delays REPEATS times. Default 1.
   -d DELAY    Delay between repetitions (no delay after last). Default 100.
   -D DELAY    Delay after every repetition (including last).
+  -w WAVE     Wave type: sine, square, sawtooth, triangle. Default square.
   -n, --new   Start a new note with default values.
   -s          Beep after every line received on stdin, passing stdin to stdout.
   -c          Beep after every character received on stdin, passing stdin to stdout.
@@ -63,6 +72,7 @@ class Tone:
     repeats: int = DEFAULT_REPEATS
     delay_ms: int = DEFAULT_DELAY_MS
     delay_mode: str = DEFAULT_DELAY_MODE
+    wave_type: WaveType = DEFAULT_WAVE
     input_mode: Optional[str] = None  # "line" or "char"
     _sequence_pcm: Optional[bytes] = field(default=None, init=False, repr=False)
     _sequence_wav: Optional[bytes] = field(default=None, init=False, repr=False)
@@ -76,6 +86,7 @@ class Tone:
                 self.delay_ms,
                 self.delay_mode,
                 spec,
+                self.wave_type,
             )
         return self._sequence_pcm
 
@@ -158,6 +169,13 @@ def _parse_repeats(value: str) -> int:
     if repeats < 1:
         raise ParseError("Repeats must be >= 1")
     return repeats
+
+
+def _parse_wave(value: str) -> WaveType:
+    waves = ["sine", "square", "sawtooth", "triangle"]
+    if value not in waves:
+        raise ParseError(f"Invalid wave type: {value!r} (choose from {', '.join(waves)})")
+    return value  # type: ignore
 
 
 def _split_short_option(arg: str, opt: str) -> Optional[str]:
@@ -298,6 +316,19 @@ def parse_args(argv: List[str]) -> Tuple[Optional[Config], Optional[int]]:
                 value, index = _consume_value(argv, index, "-D")
             current.delay_ms = _parse_delay(value)
             current.delay_mode = "after"
+            index += 1
+            continue
+
+        if arg.startswith("--wave="):
+            current.wave_type = _parse_wave(arg.split("=", 1)[1])
+            index += 1
+            continue
+
+        value = _split_short_option(arg, "-w")
+        if value is not None or arg == "-w":
+            if value is None:
+                value, index = _consume_value(argv, index, "-w")
+            current.wave_type = _parse_wave(value)
             index += 1
             continue
 

@@ -1,7 +1,7 @@
 [project]
 name = "simple-beep"
-version = "0.1.0"
-description = "Beep(1) compatible square-wave audio output"
+version = "0.2.0"
+description = "Beep(1) compatible multi-wave audio output"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "Unlicensed" }
